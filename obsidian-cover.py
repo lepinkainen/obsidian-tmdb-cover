@@ -165,6 +165,14 @@ class TMDBCoverFetcher:
             episode_run_time = details.get("episode_run_time")
             if episode_run_time and len(episode_run_time) > 0:
                 metadata["runtime"] = episode_run_time[0]
+            else:
+                # Debug logging for missing runtime data
+                if episode_run_time is None:
+                    print("  ℹ No episode_run_time field in API response")
+                elif isinstance(episode_run_time, list) and len(episode_run_time) == 0:
+                    print("  ℹ episode_run_time is empty array")
+                else:
+                    print(f"  ℹ episode_run_time value: {episode_run_time}")
 
         # Extract and format genres
         genre_ids = [g["id"] for g in details.get("genres", [])]
