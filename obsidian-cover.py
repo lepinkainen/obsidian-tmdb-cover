@@ -13,6 +13,32 @@ import requests
 import yaml
 from pathlib import Path
 from typing import Optional, Dict, Any
+from PIL import Image
+from io import BytesIO
+
+
+def sanitize_filename(filename: str) -> str:
+    """Sanitize filename for cross-platform compatibility"""
+    # Remove or replace invalid characters
+    invalid_chars = '<>:"/\\|?*'
+    for char in invalid_chars:
+        filename = filename.replace(char, "_")
+
+    # Remove leading/trailing dots and spaces
+    filename = filename.strip(". ")
+
+    # Limit length
+    if len(filename) > 200:
+        filename = filename[:200]
+
+    return filename
+
+
+def create_attachments_dir(base_dir: Path) -> Path:
+    """Create and return the attachments directory path"""
+    attachments_dir = base_dir / "attachments"
+    attachments_dir.mkdir(exist_ok=True)
+    return attachments_dir
 
 
 class TMDBCoverFetcher:
@@ -48,6 +74,41 @@ class TMDBCoverFetcher:
             print(f"Error searching TMDB: {e}")
             return None
 
+    def download_and_resize_image(
+        self, image_url: str, save_path: Path, max_width: int = 1000
+    ) -> bool:
+        """
+        Download an image from URL, resize it, and save to local path
+        Returns True if successful, False otherwise
+        """
+        try:
+            # Download the image
+            response = requests.get(image_url, stream=True, timeout=30)
+            response.raise_for_status()
+
+            # Open image with PIL
+            image = Image.open(BytesIO(response.content))  # type: ignore
+
+            # Convert to RGB if necessary (handles RGBA, P, etc.)
+            if image.mode != "RGB":
+                image = image.convert("RGB")  # type: ignore
+
+            # Calculate new dimensions maintaining aspect ratio
+            width, height = image.size
+            if width > max_width:
+                ratio = max_width / width
+                new_width = max_width
+                new_height = int(height * ratio)
+                image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)  # type: ignore
+
+            # Save as JPEG with good quality
+            image.save(save_path, "JPEG", quality=85, optimize=True)
+            return True
+
+        except Exception as e:
+            print(f"  Error downloading/resizing image: {e}")
+            return False
+
     def get_cover_url(self, title: str) -> Optional[str]:
         """Get the cover image URL for a movie/TV show title"""
         result = self.search_multi(title)
@@ -70,7 +131,7 @@ class ObsidianNoteUpdater:
             raise FileNotFoundError(f"File not found: {file_path}")
 
         self.content = self.file_path.read_text(encoding="utf-8")
-        self.frontmatter = {}
+        self.frontmatter: Dict[str, Any] = {}
         self.body = ""
         self._parse_content()
 
@@ -121,9 +182,41 @@ class ObsidianNoteUpdater:
         # Use filename without extension
         return self.file_path.stem
 
-    def update_cover(self, cover_url: str) -> bool:
+    def has_external_cover(self) -> bool:
+        """Check if the note has an external URL as cover"""
+        cover = self.frontmatter.get("cover")
+        if not cover or self._is_html_color_code(cover):
+            return False
+
+        # Check if it's an external URL (starts with http)
+        return isinstance(cover, str) and cover.startswith("http")
+
+    def get_existing_cover_url(self) -> Optional[str]:
+        """Get the existing cover URL if it's external"""
+        if self.has_external_cover():
+            return self.frontmatter.get("cover")
+        return None
+
+    def generate_local_cover_path(self, attachments_dir: Path) -> Path:
+        """Generate the local path for the cover image"""
+        title = self.get_title()
+        safe_filename = sanitize_filename(f"{title} - cover.jpg")
+        return attachments_dir / safe_filename
+
+    def get_relative_cover_path(self, local_path: Path) -> str:
+        """Get the relative path from the note to the cover image"""
+        try:
+            # Get relative path from note's directory to the image
+            note_dir = self.file_path.parent
+            relative_path = local_path.relative_to(note_dir)
+            return str(relative_path).replace("\\", "/")  # Use forward slashes
+        except ValueError:
+            # If relative_to fails, use the full path
+            return str(local_path)
+
+    def update_cover(self, cover_path: str) -> bool:
         """Add or update the cover property in frontmatter"""
-        self.frontmatter["cover"] = cover_url
+        self.frontmatter["cover"] = cover_path
         return self._save_file()
 
     def _save_file(self) -> bool:
@@ -193,37 +286,65 @@ def main():
     skipped = 0
     failed = 0
 
+    # Create attachments directory
+    attachments_dir = create_attachments_dir(vault_path)
+
     for file_path in md_files:
         print(f"\nProcessing: {file_path.name}")
 
         try:
             note = ObsidianNoteUpdater(str(file_path))
-
-            # Skip if already has cover (unless it's a color code placeholder)
-            existing_cover = note.frontmatter.get("cover")
-            if existing_cover and not note._is_html_color_code(existing_cover):
-                print("  Already has cover, skipping...")
-                skipped += 1
-                continue
-
-            # Check if we're replacing a color code
-            if existing_cover and note._is_html_color_code(existing_cover):
-                print(f"  Replacing color placeholder: {existing_cover}")
-
             title = note.get_title()
             print(f"  Title: {title}")
 
-            cover_url = tmdb.get_cover_url(title)
+            # Check current cover status
+            existing_cover = note.frontmatter.get("cover")
 
-            if cover_url:
-                if note.update_cover(cover_url):
-                    print("  ✓ Updated successfully")
-                    processed += 1
+            # Skip if already has local cover (not URL, not color code)
+            if (
+                existing_cover
+                and not note._is_html_color_code(existing_cover)
+                and not note.has_external_cover()
+                and not existing_cover.startswith("http")
+            ):
+                print("  Already has local cover, skipping...")
+                skipped += 1
+                continue
+
+            # Determine image URL to download
+            image_url = None
+
+            if note.has_external_cover():
+                # Download existing external URL
+                image_url = note.get_existing_cover_url()
+                print("  Found external cover URL, will download locally")
+            elif existing_cover and note._is_html_color_code(existing_cover):
+                print(f"  Replacing color placeholder: {existing_cover}")
+                # Search for new cover
+                image_url = tmdb.get_cover_url(title)
+            elif not existing_cover:
+                # No cover, search for one
+                image_url = tmdb.get_cover_url(title)
+
+            if image_url:
+                # Generate local path for the cover
+                local_cover_path = note.generate_local_cover_path(attachments_dir)
+
+                # Download and resize the image
+                if tmdb.download_and_resize_image(image_url, local_cover_path):
+                    # Update note with relative path
+                    relative_path = note.get_relative_cover_path(local_cover_path)
+                    if note.update_cover(relative_path):
+                        print(f"  ✓ Downloaded and updated: {relative_path}")
+                        processed += 1
+                    else:
+                        print("  ✗ Failed to update note")
+                        failed += 1
                 else:
-                    print("  ✗ Failed to update")
+                    print("  ✗ Failed to download image")
                     failed += 1
             else:
-                print("  ✗ No results found")
+                print("  ✗ No cover image found")
                 failed += 1
 
         except Exception as e:

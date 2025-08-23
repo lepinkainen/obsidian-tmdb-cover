@@ -62,3 +62,4 @@ The main execution flow processes all markdown files in a specified directory, w
 - Safely handles malformed YAML frontmatter
 - Preserves file encoding (UTF-8) when reading/writing files
 - API responses are filtered to only include results with poster images
+- use `uv run python` to run python in this project
