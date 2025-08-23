@@ -34,6 +34,7 @@ This is a PyPI-ready Python package that fetches movie/TV show cover images from
 ## Development Commands
 
 ### Setup and Dependencies
+
 ```bash
 # Install dependencies (using uv)
 uv sync
@@ -43,6 +44,7 @@ uv run python -m pip install -e .
 ```
 
 ### Code Quality (follows llm-shared guidelines)
+
 ```bash
 # Format and lint code
 uv run ruff format .
@@ -53,18 +55,20 @@ uv run mypy obsidian_tmdb_cover/
 ```
 
 ### Running the Package
+
 ```bash
 # Set TMDB API key (required)
 export TMDB_API_KEY=your_api_key_here
 
 # Via console script
-uv run obsidian-cover /path/to/obsidian/vault
+uv run obsidian-tmdb-cover /path/to/obsidian/vault
 
 # Via module execution
 uv run python -m obsidian_tmdb_cover /path/to/obsidian/vault
 ```
 
 ### Testing
+
 ```bash
 # Run basic functionality tests (requires TMDB_API_KEY for full tests)
 uv run python test_metadata.py
@@ -73,7 +77,9 @@ uv run python test_metadata.py
 ## Key Implementation Patterns
 
 ### Smart Processing Logic
+
 The CLI implements intelligent processing that checks what each note needs:
+
 ```python
 # Determines if cover is needed (no cover, color placeholder, or external URL)
 needs_cover = (
@@ -87,7 +93,9 @@ needs_metadata = not existing_runtime or not has_genre_tags
 ```
 
 ### YAML Frontmatter Handling
+
 Robust frontmatter parsing with fallback for malformed YAML:
+
 ```python
 try:
     self.frontmatter = yaml.safe_load(frontmatter_str) or {}
@@ -96,18 +104,22 @@ except yaml.YAMLError:
 ```
 
 ### Genre Tag Sanitization
+
 Converts TMDB genre names to valid Obsidian tags:
+
 - `"Sci-Fi & Fantasy"` → `"movie/Sci-Fi-and-Fantasy"`
 - Removes `#` symbols, replaces `/` and spaces with `-`
 
 ### PyPI Package Structure
-- Entry points: `obsidian-cover = "obsidian_tmdb_cover.cli:main"`
+
+- Entry points: `obsidian-tmdb-cover = "obsidian_tmdb_cover.cli:main"`
 - Module execution: `__main__.py` enables `python -m obsidian_tmdb_cover`
 - Proper imports with `__all__` declarations in `__init__.py`
 
 ## Testing Strategy
 
 Basic unit tests in `test_metadata.py` cover:
+
 - Frontmatter parsing and updates
 - Tag merging without duplicates
 - Genre name sanitization

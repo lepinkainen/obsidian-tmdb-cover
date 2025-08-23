@@ -1,6 +1,6 @@
 [project]
 name = "obsidian-tmdb-cover"
-version = "0.1.2"
+version = "0.1.3"
 description = "Add TMDB cover images to Obsidian notes"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -38,7 +38,7 @@ Repository = "https://github.com/yourusername/obsidian-tmdb-cover.git"
 Issues = "https://github.com/yourusername/obsidian-tmdb-cover/issues"
 
 [project.scripts]
-obsidian-cover = "obsidian_tmdb_cover.cli:main"
+obsidian-tmdb-cover = "obsidian_tmdb_cover.cli:main"
 
 [build-system]
 requires = ["hatchling"]
