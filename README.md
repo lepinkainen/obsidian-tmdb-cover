@@ -16,6 +16,15 @@ Add TMDB cover images and metadata to your Obsidian notes automatically.
 pip install obsidian-tmdb-cover
 ```
 
+## Run without installation
+
+Use `uvx` to run the tool without permanent installation:
+
+```bash
+# Run directly with uvx (no installation required)
+env TMDB_API_KEY=your_api_key_here uvx obsidian-tmdb-cover /path/to/your/obsidian/vault
+```
+
 ## Usage
 
 **Bring Your Own API Key** - Get a free API key from [TheMovieDB](https://www.themoviedb.org/settings/api).
