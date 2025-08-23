@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Obsidian TMDB Cover Image Script
-Adds movie/TV show cover images from TheMovieDB to Obsidian notes
+Obsidian TMDB Cover Image Script (Batch Mode)
+Processes entire directories to add movie/TV show cover images from TheMovieDB to Obsidian notes
 """
 
 import os
@@ -145,64 +145,6 @@ class ObsidianNoteUpdater:
 
 
 def main():
-    # Configuration
-    API_KEY = os.getenv("TMDB_API_KEY")
-    if not API_KEY:
-        print("Error: TMDB_API_KEY environment variable is not set")
-        print("Please set your TMDB API key as an environment variable:")
-        print("  export TMDB_API_KEY=your_api_key_here")
-        return
-
-    # Get file path from command line argument or prompt
-    if len(sys.argv) > 1:
-        file_path = sys.argv[1]
-    else:
-        file_path = input("Enter the path to your Obsidian markdown file: ").strip()
-
-    # Remove quotes if present
-    file_path = file_path.strip('"').strip("'")
-
-    print(f"\nProcessing: {file_path}")
-
-    try:
-        # Initialize components
-        tmdb = TMDBCoverFetcher(API_KEY)
-        note = ObsidianNoteUpdater(file_path)
-
-        # Get the title
-        title = note.get_title()
-        print(f"  Title extracted: {title}")
-
-        # Check if cover already exists
-        if note.frontmatter.get("cover"):
-            print(f"  Cover already exists: {note.frontmatter['cover']}")
-            overwrite = input("  Overwrite existing cover? (y/n): ").lower()
-            if overwrite != "y":
-                print("  Skipping...")
-                return
-
-        # Search for cover image
-        print(f"  Searching TMDB for: {title}")
-        cover_url = tmdb.get_cover_url(title)
-
-        if cover_url:
-            print(f"  Cover URL: {cover_url}")
-
-            # Update the note
-            if note.update_cover(cover_url):
-                print("  ✓ Successfully updated note with cover image!")
-            else:
-                print("  ✗ Failed to update note")
-        else:
-            print(f"  ✗ No results found for: {title}")
-
-    except FileNotFoundError as e:
-        print(f"Error: {e}")
-    except Exception as e:
-        print(f"Unexpected error: {e}")
-
-
-def batch_process():
     """Process multiple files in a directory"""
     API_KEY = os.getenv("TMDB_API_KEY")
     if not API_KEY:
@@ -211,7 +153,12 @@ def batch_process():
         print("  export TMDB_API_KEY=your_api_key_here")
         return
 
-    vault_path = input("Enter the path to your Obsidian vault or folder: ").strip()
+    # Get directory path from command line argument or prompt
+    if len(sys.argv) > 1:
+        vault_path = sys.argv[1]
+    else:
+        vault_path = input("Enter the path to your Obsidian vault or folder: ").strip()
+
     vault_path = Path(vault_path.strip('"').strip("'"))
 
     if not vault_path.exists():
@@ -278,14 +225,6 @@ def batch_process():
 
 
 if __name__ == "__main__":
-    print("Obsidian TMDB Cover Image Updater")
+    print("Obsidian TMDB Cover Image Updater (Batch Mode)")
     print("-" * 40)
-
-    mode = input(
-        "\nSelect mode:\n  1. Process single file\n  2. Batch process folder\nChoice (1 or 2): "
-    )
-
-    if mode == "2":
-        batch_process()
-    else:
-        main()
+    main()
