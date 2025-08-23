@@ -72,6 +72,12 @@ class ObsidianNoteUpdater:
         self.body = ""
         self._parse_content()
 
+    def _is_html_color_code(self, value: str) -> bool:
+        """Check if a string is an HTML color code in #xxxxxx format"""
+        if not isinstance(value, str):
+            return False
+        return bool(re.match(r"^#[0-9a-fA-F]{6}$", value))
+
     def _parse_content(self):
         """Parse the markdown file to extract frontmatter and body"""
         # Check if file has frontmatter
@@ -192,11 +198,16 @@ def main():
         try:
             note = ObsidianNoteUpdater(str(file_path))
 
-            # Skip if already has cover
-            if note.frontmatter.get("cover"):
+            # Skip if already has cover (unless it's a color code placeholder)
+            existing_cover = note.frontmatter.get("cover")
+            if existing_cover and not note._is_html_color_code(existing_cover):
                 print("  Already has cover, skipping...")
                 skipped += 1
                 continue
+
+            # Check if we're replacing a color code
+            if existing_cover and note._is_html_color_code(existing_cover):
+                print(f"  Replacing color placeholder: {existing_cover}")
 
             title = note.get_title()
             print(f"  Title: {title}")
