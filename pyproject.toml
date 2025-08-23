@@ -11,11 +11,11 @@ dependencies = [
 ]
 
 [project.scripts]
-obsidian-cover = "obsidian-cover:main"
+obsidian-cover = "obsidian-tmdb-cover:main"
 
-#[build-system]
-#requires = ["hatchling"]
-#build-backend = "hatchling.build"
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [tool.uv]
 dev-dependencies = [
