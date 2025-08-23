@@ -4,7 +4,32 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Python script that fetches movie/TV show cover images from TheMovieDB (TMDB) API and adds them to Obsidian markdown notes as frontmatter properties. The script processes entire directories in batch mode only.
+This is a PyPI-ready Python package that fetches movie/TV show cover images from TheMovieDB (TMDB) API and adds them to Obsidian markdown notes as frontmatter properties. The package has been refactored from a monolithic script into a proper Python package structure for distribution.
+
+## Package Architecture
+
+### Core Components (`obsidian_tmdb_cover/`)
+
+- **`fetcher.py`** - `TMDBCoverFetcher` class handles all TMDB API interactions
+  - Multi-search endpoint for movies/TV shows
+  - Genre mapping with caching (`_genre_cache`)
+  - Image download and resizing (PIL/Pillow)
+  - Metadata extraction (runtime, genres)
+
+- **`updater.py`** - `ObsidianNoteUpdater` class manages Obsidian markdown files
+  - YAML frontmatter parsing with error handling
+  - Title extraction priority: frontmatter → H1 header → filename
+  - Relative path generation for cover images
+  - Tag merging and metadata updates
+
+- **`utils.py`** - Shared utility functions
+  - `sanitize_filename()` - Cross-platform filename sanitization
+  - `create_attachments_dir()` - Creates `attachments/` directory
+
+- **`cli.py`** - Command-line interface and main processing logic
+  - Batch processing of markdown files
+  - Smart logic for cover/metadata needs detection
+  - Progress reporting and error handling
 
 ## Development Commands
 
@@ -13,53 +38,79 @@ This is a Python script that fetches movie/TV show cover images from TheMovieDB 
 # Install dependencies (using uv)
 uv sync
 
-# Activate virtual environment
-source .venv/bin/activate
+# Install package in development mode
+uv run python -m pip install -e .
 ```
 
-### Code Quality
+### Code Quality (follows llm-shared guidelines)
 ```bash
 # Format and lint code
 uv run ruff format .
 uv run ruff check .
 
-# Type checking
-uv run mypy obsidian-cover.py
+# Type checking (handles PIL import issues automatically)
+uv run mypy obsidian_tmdb_cover/
 ```
 
-### Running the Script
+### Running the Package
 ```bash
 # Set TMDB API key (required)
 export TMDB_API_KEY=your_api_key_here
 
-# Run the script with a directory path
-python obsidian-cover.py /path/to/obsidian/vault
+# Via console script
+uv run obsidian-cover /path/to/obsidian/vault
 
-# Or run interactively
-python obsidian-cover.py
+# Via module execution
+uv run python -m obsidian_tmdb_cover /path/to/obsidian/vault
 ```
 
-## Architecture
+### Testing
+```bash
+# Run basic functionality tests (requires TMDB_API_KEY for full tests)
+uv run python test_metadata.py
+```
 
-The codebase consists of two main classes:
+## Key Implementation Patterns
 
-### TMDBCoverFetcher (obsidian-cover.py:16-61)
-- Handles TMDB API interactions
-- Searches for movies/TV shows using multi-search endpoint
-- Returns poster image URLs from TMDB
+### Smart Processing Logic
+The CLI implements intelligent processing that checks what each note needs:
+```python
+# Determines if cover is needed (no cover, color placeholder, or external URL)
+needs_cover = (
+    not existing_cover
+    or note._is_html_color_code(existing_cover)
+    or note.has_external_cover()
+)
 
-### ObsidianNoteUpdater (obsidian-cover.py:63-144)  
-- Parses Obsidian markdown files with YAML frontmatter
-- Extracts titles from frontmatter, H1 headers, or filenames
-- Updates frontmatter with cover URLs and saves files
+# Determines if metadata is needed (missing runtime or genre tags)
+needs_metadata = not existing_runtime or not has_genre_tags
+```
 
-The main execution flow processes all markdown files in a specified directory, with options to process all files or select specific ones.
+### YAML Frontmatter Handling
+Robust frontmatter parsing with fallback for malformed YAML:
+```python
+try:
+    self.frontmatter = yaml.safe_load(frontmatter_str) or {}
+except yaml.YAMLError:
+    self.frontmatter = {}  # Graceful fallback
+```
 
-## Key Implementation Details
+### Genre Tag Sanitization
+Converts TMDB genre names to valid Obsidian tags:
+- `"Sci-Fi & Fantasy"` → `"movie/Sci-Fi-and-Fantasy"`
+- Removes `#` symbols, replaces `/` and spaces with `-`
 
-- Uses YAML frontmatter parsing to extract and update note metadata
-- Prioritizes title extraction: frontmatter > H1 heading > filename
-- Safely handles malformed YAML frontmatter
-- Preserves file encoding (UTF-8) when reading/writing files
-- API responses are filtered to only include results with poster images
-- use `uv run python` to run python in this project
+### PyPI Package Structure
+- Entry points: `obsidian-cover = "obsidian_tmdb_cover.cli:main"`
+- Module execution: `__main__.py` enables `python -m obsidian_tmdb_cover`
+- Proper imports with `__all__` declarations in `__init__.py`
+
+## Testing Strategy
+
+Basic unit tests in `test_metadata.py` cover:
+- Frontmatter parsing and updates
+- Tag merging without duplicates
+- Genre name sanitization
+- TMDB API integration (with API key)
+
+Test structure follows the pattern: temporary file creation → operation → verification → cleanup.
