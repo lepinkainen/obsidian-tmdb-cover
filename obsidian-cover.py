@@ -47,6 +47,17 @@ class TMDBCoverFetcher:
         self.api_key = api_key
         self.base_url = "https://api.themoviedb.org/3"
         self.image_base_url = "https://image.tmdb.org/t/p/original"
+        self._genre_cache: Dict[str, Dict[int, str]] = {}
+
+    def _sanitize_genre_name(self, name: str) -> str:
+        """Sanitize genre name for valid Obsidian tags"""
+        # Replace common problematic characters
+        sanitized = name.replace("&", "and")
+        # Remove or replace other characters that might cause issues
+        sanitized = sanitized.replace("#", "")  # Remove hash symbols
+        sanitized = sanitized.replace("/", "-")  # Replace slashes with hyphens
+        sanitized = sanitized.replace(" ", "-")  # Replace spaces with hyphens
+        return sanitized.strip("-")  # Remove leading/trailing hyphens
 
     def search_multi(self, query: str) -> Optional[Dict[str, Any]]:
         """
@@ -73,6 +84,105 @@ class TMDBCoverFetcher:
         except requests.exceptions.RequestException as e:
             print(f"Error searching TMDB: {e}")
             return None
+
+    def _get_genres(self, media_type: str) -> Dict[int, str]:
+        """Get genre mapping for movie or tv, with caching"""
+        if media_type in self._genre_cache:
+            return self._genre_cache[media_type]
+
+        url = f"{self.base_url}/genre/{media_type}/list"
+        params = {"api_key": self.api_key}
+
+        try:
+            response = requests.get(url, params=params)
+            response.raise_for_status()
+            data = response.json()
+
+            genres = {}
+            for genre in data.get("genres", []):
+                genres[genre["id"]] = genre["name"]
+
+            self._genre_cache[media_type] = genres
+            return genres
+
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching {media_type} genres: {e}")
+            return {}
+
+    def get_movie_details(self, movie_id: int) -> Optional[Dict[str, Any]]:
+        """Get detailed movie information"""
+        url = f"{self.base_url}/movie/{movie_id}"
+        params = {"api_key": self.api_key}
+
+        try:
+            response = requests.get(url, params=params)
+            response.raise_for_status()
+            return response.json()
+
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching movie details: {e}")
+            return None
+
+    def get_tv_details(self, tv_id: int) -> Optional[Dict[str, Any]]:
+        """Get detailed TV show information"""
+        url = f"{self.base_url}/tv/{tv_id}"
+        params = {"api_key": self.api_key}
+
+        try:
+            response = requests.get(url, params=params)
+            response.raise_for_status()
+            return response.json()
+
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching TV details: {e}")
+            return None
+
+    def get_metadata(self, search_result: Dict[str, Any]) -> Dict[str, Any]:
+        """Get metadata (runtime, genres) from search result"""
+        media_type = search_result.get("media_type")
+        media_id = search_result.get("id")
+
+        if not media_type or not media_id:
+            return {}
+
+        details = None
+        if media_type == "movie":
+            details = self.get_movie_details(media_id)
+        elif media_type == "tv":
+            details = self.get_tv_details(media_id)
+
+        if not details:
+            return {}
+
+        metadata = {}
+
+        # Extract runtime
+        if media_type == "movie":
+            runtime = details.get("runtime")
+            if runtime:
+                metadata["runtime"] = runtime
+        elif media_type == "tv":
+            episode_run_time = details.get("episode_run_time")
+            if episode_run_time and len(episode_run_time) > 0:
+                metadata["runtime"] = episode_run_time[0]
+
+        # Extract and format genres
+        genre_ids = [g["id"] for g in details.get("genres", [])]
+        if genre_ids:
+            genre_mapping = self._get_genres(media_type)
+            genre_tags = []
+            for genre_id in genre_ids:
+                if genre_id in genre_mapping:
+                    genre_name = genre_mapping[genre_id]
+                    # Sanitize genre name for valid Obsidian tags
+                    sanitized_name = self._sanitize_genre_name(genre_name)
+                    genre_tag = f"{media_type}/{sanitized_name}"
+                    genre_tags.append(genre_tag)
+
+            if genre_tags:
+                metadata["genre_tags"] = genre_tags
+
+        return metadata
 
     def download_and_resize_image(
         self, image_url: str, save_path: Path, max_width: int = 1000
@@ -121,6 +231,23 @@ class TMDBCoverFetcher:
             return cover_url
 
         return None
+
+    def get_cover_and_metadata(
+        self, title: str
+    ) -> tuple[Optional[str], Dict[str, Any]]:
+        """Get both cover URL and metadata for a movie/TV show title"""
+        result = self.search_multi(title)
+
+        if not result or not result.get("poster_path"):
+            return None, {}
+
+        cover_url = f"{self.image_base_url}{result['poster_path']}"
+        media_type = "movie" if result.get("media_type") == "movie" else "TV show"
+        name = result.get("title") or result.get("name", "Unknown")
+        print(f"  Found {media_type}: {name}")
+
+        metadata = self.get_metadata(result)
+        return cover_url, metadata
 
 
 class ObsidianNoteUpdater:
@@ -219,6 +346,43 @@ class ObsidianNoteUpdater:
         self.frontmatter["cover"] = cover_path
         return self._save_file()
 
+    def update_runtime(self, runtime: int) -> bool:
+        """Add or update the runtime property in frontmatter"""
+        self.frontmatter["runtime"] = runtime
+        return self._save_file()
+
+    def update_tags(self, new_tags: list[str]) -> bool:
+        """Add new tags to existing tags in frontmatter"""
+        existing_tags = self.frontmatter.get("tags", [])
+
+        # Ensure existing_tags is a list
+        if not isinstance(existing_tags, list):
+            existing_tags = []
+
+        # Merge tags, avoiding duplicates
+        all_tags = list(set(existing_tags + new_tags))
+        all_tags.sort()  # Sort for consistency
+
+        self.frontmatter["tags"] = all_tags
+        return self._save_file()
+
+    def update_metadata(self, metadata: Dict[str, Any]) -> bool:
+        """Update multiple metadata fields at once"""
+        if "runtime" in metadata:
+            self.frontmatter["runtime"] = metadata["runtime"]
+
+        if "genre_tags" in metadata:
+            existing_tags = self.frontmatter.get("tags", [])
+            if not isinstance(existing_tags, list):
+                existing_tags = []
+
+            # Merge tags, avoiding duplicates
+            all_tags = list(set(existing_tags + metadata["genre_tags"]))
+            all_tags.sort()
+            self.frontmatter["tags"] = all_tags
+
+        return self._save_file()
+
     def _save_file(self) -> bool:
         """Save the updated content back to the file"""
         try:
@@ -300,31 +464,63 @@ def main():
             # Check current cover status
             existing_cover = note.frontmatter.get("cover")
 
-            # Skip if already has local cover (not URL, not color code)
-            if (
-                existing_cover
-                and not note._is_html_color_code(existing_cover)
-                and not note.has_external_cover()
-                and not existing_cover.startswith("http")
-            ):
-                print("  Already has local cover, skipping...")
+            # Check if we need to fetch a cover
+            needs_cover = (
+                not existing_cover
+                or note._is_html_color_code(existing_cover)
+                or note.has_external_cover()
+            )
+
+            # Check if we need to fetch metadata
+            existing_runtime = note.frontmatter.get("runtime")
+            existing_tags = note.frontmatter.get("tags", [])
+            has_genre_tags = any(
+                tag.startswith(("movie/", "tv/"))
+                for tag in existing_tags
+                if isinstance(tag, str)
+            )
+            needs_metadata = not existing_runtime or not has_genre_tags
+
+            # Skip if we don't need cover or metadata
+            if not needs_cover and not needs_metadata:
+                print("  Already has cover and metadata, skipping...")
                 skipped += 1
                 continue
 
-            # Determine image URL to download
+            # Determine what to fetch
             image_url = None
+            metadata = {}
 
-            if note.has_external_cover():
-                # Download existing external URL
-                image_url = note.get_existing_cover_url()
-                print("  Found external cover URL, will download locally")
-            elif existing_cover and note._is_html_color_code(existing_cover):
-                print(f"  Replacing color placeholder: {existing_cover}")
-                # Search for new cover
-                image_url = tmdb.get_cover_url(title)
-            elif not existing_cover:
-                # No cover, search for one
-                image_url = tmdb.get_cover_url(title)
+            if needs_cover and needs_metadata:
+                if note.has_external_cover():
+                    # Download existing external URL, but also fetch metadata
+                    image_url = note.get_existing_cover_url()
+                    print("  Found external cover URL, will download locally")
+                    # Still need to search for metadata
+                    _, metadata = tmdb.get_cover_and_metadata(title)
+                elif existing_cover and note._is_html_color_code(existing_cover):
+                    print(f"  Replacing color placeholder: {existing_cover}")
+                    # Search for new cover and metadata
+                    image_url, metadata = tmdb.get_cover_and_metadata(title)
+                elif not existing_cover:
+                    # No cover, search for one and get metadata
+                    image_url, metadata = tmdb.get_cover_and_metadata(title)
+            elif needs_cover:
+                # Only need cover
+                if note.has_external_cover():
+                    image_url = note.get_existing_cover_url()
+                    print("  Found external cover URL, will download locally")
+                elif existing_cover and note._is_html_color_code(existing_cover):
+                    print(f"  Replacing color placeholder: {existing_cover}")
+                    image_url = tmdb.get_cover_url(title)
+                elif not existing_cover:
+                    image_url = tmdb.get_cover_url(title)
+            elif needs_metadata:
+                # Only need metadata
+                print("  Fetching metadata only...")
+                _, metadata = tmdb.get_cover_and_metadata(title)
+
+            success = False
 
             if image_url:
                 # Generate local path for the cover
@@ -334,17 +530,43 @@ def main():
                 if tmdb.download_and_resize_image(image_url, local_cover_path):
                     # Update note with relative path
                     relative_path = note.get_relative_cover_path(local_cover_path)
+
                     if note.update_cover(relative_path):
-                        print(f"  ✓ Downloaded and updated: {relative_path}")
-                        processed += 1
+                        print(f"  ✓ Downloaded and updated cover: {relative_path}")
+                        success = True
                     else:
-                        print("  ✗ Failed to update note")
-                        failed += 1
+                        print("  ✗ Failed to update cover")
                 else:
                     print("  ✗ Failed to download image")
-                    failed += 1
-            else:
+
+            elif needs_cover:
                 print("  ✗ No cover image found")
+
+            # Update metadata if we have it (regardless of cover success)
+            if metadata:
+                if note.update_metadata(metadata):
+                    runtime = metadata.get("runtime")
+                    genre_tags = metadata.get("genre_tags", [])
+                    if runtime:
+                        print(f"  ✓ Added runtime: {runtime} minutes")
+                    if genre_tags:
+                        print(f"  ✓ Added genres: {', '.join(genre_tags)}")
+
+                    # If we only needed metadata, this counts as success
+                    if not needs_cover:
+                        success = True
+                else:
+                    print("  ✗ Failed to update metadata")
+            elif needs_metadata:
+                print("  ✗ No metadata found")
+
+            if (
+                success
+                or (image_url and not needs_metadata)
+                or (metadata and not needs_cover)
+            ):
+                processed += 1
+            else:
                 failed += 1
 
         except Exception as e:
