@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
-Obsidian TMDB Cover Image Script (Batch Mode)
-Processes entire directories to add movie/TV show cover images from TheMovieDB to Obsidian notes
+Obsidian TMDB Cover Image Script
+Processes all markdown files in a directory to add movie/TV show cover images from TheMovieDB
+
+Usage: python obsidian-cover.py <directory_path>
 """
 
 import os
-import sys
 import re
+import argparse
 import requests
 import yaml
 from pathlib import Path
@@ -151,7 +153,16 @@ class ObsidianNoteUpdater:
 
 
 def main():
-    """Process multiple files in a directory"""
+    """Process all markdown files in a directory"""
+    parser = argparse.ArgumentParser(
+        description="Add TMDB cover images to Obsidian notes"
+    )
+    parser.add_argument(
+        "directory", help="Path to Obsidian vault or folder containing markdown files"
+    )
+
+    args = parser.parse_args()
+
     API_KEY = os.getenv("TMDB_API_KEY")
     if not API_KEY:
         print("Error: TMDB_API_KEY environment variable is not set")
@@ -159,33 +170,23 @@ def main():
         print("  export TMDB_API_KEY=your_api_key_here")
         return
 
-    # Get directory path from command line argument or prompt
-    if len(sys.argv) > 1:
-        vault_path = sys.argv[1]
-    else:
-        vault_path = input("Enter the path to your Obsidian vault or folder: ").strip()
-
-    vault_path = Path(vault_path.strip('"').strip("'"))
+    vault_path = Path(args.directory.strip('"').strip("'"))
 
     if not vault_path.exists():
         print(f"Path does not exist: {vault_path}")
         return
 
+    if not vault_path.is_dir():
+        print(f"Path is not a directory: {vault_path}")
+        return
+
     # Find all markdown files
     md_files = list(vault_path.rglob("*.md"))
-    print(f"\nFound {len(md_files)} markdown files")
+    print(f"Found {len(md_files)} markdown files")
 
-    process_all = input("Process all files? (y/n): ").lower() == "y"
-
-    if not process_all:
-        # Let user select specific files
-        print("\nAvailable files:")
-        for i, file in enumerate(md_files, 1):
-            print(f"  {i}. {file.name}")
-
-        selection = input("\nEnter file numbers to process (comma-separated): ")
-        indices = [int(x.strip()) - 1 for x in selection.split(",")]
-        md_files = [md_files[i] for i in indices if 0 <= i < len(md_files)]
+    if len(md_files) == 0:
+        print("No markdown files found in the directory")
+        return
 
     tmdb = TMDBCoverFetcher(API_KEY)
     processed = 0
@@ -236,6 +237,6 @@ def main():
 
 
 if __name__ == "__main__":
-    print("Obsidian TMDB Cover Image Updater (Batch Mode)")
-    print("-" * 40)
+    print("Obsidian TMDB Cover Image Updater")
+    print("-" * 32)
     main()
