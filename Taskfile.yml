@@ -1,0 +1,89 @@
+# Taskfile for obsidian-tmdb-cover
+# See: https://taskfile.dev/
+version: '3'
+
+vars:
+  PROJECT_NAME: obsidian-tmdb-cover
+  VERSION:
+    sh: grep 'version = ' pyproject.toml | head -1 | cut -d'"' -f2
+
+tasks:
+  # Core build task - depends on tests and linting
+  build:
+    desc: Build the project
+    deps: [test, lint]
+    cmds:
+      - task: build-python
+
+  # CI build without tests/linting (run separately in CI)
+  build-ci:
+    desc: Build for CI/CD (build only)
+    cmds:
+      - task: build-python
+
+  # Test tasks
+  test:
+    desc: Run tests
+    cmds:
+      - task: test-python
+
+  test-ci:
+    desc: Run tests with coverage for CI
+    cmds:
+      - task: test-python-ci
+
+  # Linting tasks
+  lint:
+    desc: Lint code
+    cmds:
+      - task: lint-python
+
+  # Clean build artifacts
+  clean:
+    desc: Clean build artifacts
+    cmds:
+      - rm -rf dist/
+      - rm -rf build/
+      - rm -rf *.egg-info
+      - rm -rf .pytest_cache
+      - rm -rf .mypy_cache
+      - rm -rf .ruff_cache
+      - find . -type d -name __pycache__ -exec rm -rf {} +
+
+  # Python-specific tasks
+  build-python:
+    desc: Build Python package
+    cmds:
+      - uv sync
+      - uv build
+
+  test-python:
+    desc: Run Python tests
+    cmds:
+      - uv run pytest tests/
+
+  test-python-ci:
+    desc: Run Python tests with coverage for CI
+    cmds:
+      - uv run pytest tests/ --cov=obsidian_tmdb_cover --cov-report=xml --cov-report=term
+
+  lint-python:
+    desc: Lint Python code
+    cmds:
+      - uv run ruff check .
+      - uv run ruff format .
+      - uv run mypy obsidian_tmdb_cover/
+
+  # Development task
+  dev:
+    desc: Install in development mode
+    cmds:
+      - uv sync
+      - uv run python -m pip install -e .
+
+  # Publish task
+  publish:
+    desc: Publish to PyPI
+    deps: [build]
+    cmds:
+      - uv publish

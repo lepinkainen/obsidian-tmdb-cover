@@ -1,11 +1,11 @@
 [project]
 name = "obsidian-tmdb-cover"
-version = "0.1.3"
+version = "0.2.0"
 description = "Add TMDB cover images to Obsidian notes"
 readme = "README.md"
 requires-python = ">=3.8"
 authors = [
-    {name = "Your Name", email = "your.email@example.com"}
+    {name = "Riku Lindblad", email = "riku.lindblad@iki.fi"}
 ]
 license = {text = "MIT"}
 keywords = ["obsidian", "tmdb", "movies", "tv", "covers", "metadata"]
@@ -33,9 +33,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/obsidian-tmdb-cover"
-Repository = "https://github.com/yourusername/obsidian-tmdb-cover.git"
-Issues = "https://github.com/yourusername/obsidian-tmdb-cover/issues"
+Homepage = "https://github.com/lepinkainen/obsidian-tmdb-cover"
+Repository = "https://github.com/lepinkainen/obsidian-tmdb-cover.git"
+Issues = "https://github.com/lepinkainen/obsidian-tmdb-cover/issues"
 
 [project.scripts]
 obsidian-tmdb-cover = "obsidian_tmdb_cover.cli:main"
@@ -50,4 +50,6 @@ dev-dependencies = [
     "mypy>=1.0.0",
     "types-requests",
     "types-PyYAML",
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
 ]

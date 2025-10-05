@@ -34,7 +34,7 @@ env TMDB_API_KEY=your_api_key_here uvx obsidian-tmdb-cover /path/to/your/obsidia
 export TMDB_API_KEY=your_api_key_here
 
 # Process an Obsidian vault
-obsidian-cover /path/to/your/obsidian/vault
+obsidian-tmdb-cover /path/to/your/obsidian/vault
 
 # Or run as a module
 python -m obsidian_tmdb_cover /path/to/your/obsidian/vault

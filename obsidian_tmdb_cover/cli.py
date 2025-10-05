@@ -1,15 +1,17 @@
 """Command-line interface for obsidian-tmdb-cover."""
 
 import os
+import sys
 import argparse
 from pathlib import Path
+from typing import Dict, Any
 
 from .fetcher import TMDBCoverFetcher
 from .updater import ObsidianNoteUpdater
 from .utils import create_attachments_dir
 
 
-def main():
+def main() -> None:
     """Process all markdown files in a directory"""
     parser = argparse.ArgumentParser(
         description="Add TMDB cover images to Obsidian notes"
@@ -25,17 +27,17 @@ def main():
         print("Error: TMDB_API_KEY environment variable is not set")
         print("Please set your TMDB API key as an environment variable:")
         print("  export TMDB_API_KEY=your_api_key_here")
-        return
+        sys.exit(1)
 
     vault_path = Path(args.directory.strip('"').strip("'"))
 
     if not vault_path.exists():
         print(f"Path does not exist: {vault_path}")
-        return
+        sys.exit(1)
 
     if not vault_path.is_dir():
         print(f"Path is not a directory: {vault_path}")
-        return
+        sys.exit(1)
 
     # Find all markdown files
     md_files = list(vault_path.rglob("*.md"))
@@ -43,7 +45,7 @@ def main():
 
     if len(md_files) == 0:
         print("No markdown files found in the directory")
-        return
+        sys.exit(1)
 
     tmdb = TMDBCoverFetcher(API_KEY)
     processed = 0
@@ -89,7 +91,7 @@ def main():
 
             # Determine what to fetch
             image_url = None
-            metadata = {}
+            metadata: Dict[str, Any] = {}
 
             if needs_cover and needs_metadata:
                 if note.has_external_cover():
