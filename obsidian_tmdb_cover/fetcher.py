@@ -5,6 +5,12 @@ from pathlib import Path
 from typing import Optional, Dict, Any
 from PIL import Image  # type: ignore[import-not-found]
 from io import BytesIO
+from tenacity import (
+    retry,
+    stop_after_attempt,
+    wait_exponential,
+    retry_if_exception_type,
+)
 
 
 class TMDBCoverFetcher:
@@ -25,6 +31,11 @@ class TMDBCoverFetcher:
         sanitized = sanitized.replace(" ", "-")  # Replace spaces with hyphens
         return sanitized.strip("-")  # Remove leading/trailing hyphens
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type(requests.exceptions.RequestException),
+    )
     def search_multi(self, query: str) -> Optional[Dict[str, Any]]:
         """
         Search for movies and TV shows simultaneously
@@ -34,7 +45,7 @@ class TMDBCoverFetcher:
         params = {"api_key": self.api_key, "query": query, "include_adult": "false"}
 
         try:
-            response = requests.get(url, params=params)
+            response = requests.get(url, params=params, timeout=10)
             response.raise_for_status()
             data = response.json()
 
@@ -49,8 +60,13 @@ class TMDBCoverFetcher:
 
         except requests.exceptions.RequestException as e:
             print(f"Error searching TMDB: {e}")
-            return None
+            raise
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type(requests.exceptions.RequestException),
+    )
     def _get_genres(self, media_type: str) -> Dict[int, str]:
         """Get genre mapping for movie or tv, with caching"""
         if media_type in self._genre_cache:
@@ -60,7 +76,7 @@ class TMDBCoverFetcher:
         params = {"api_key": self.api_key}
 
         try:
-            response = requests.get(url, params=params)
+            response = requests.get(url, params=params, timeout=10)
             response.raise_for_status()
             data = response.json()
 
@@ -73,35 +89,45 @@ class TMDBCoverFetcher:
 
         except requests.exceptions.RequestException as e:
             print(f"Error fetching {media_type} genres: {e}")
-            return {}
+            raise
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type(requests.exceptions.RequestException),
+    )
     def get_movie_details(self, movie_id: int) -> Optional[Dict[str, Any]]:
         """Get detailed movie information"""
         url = f"{self.base_url}/movie/{movie_id}"
         params = {"api_key": self.api_key}
 
         try:
-            response = requests.get(url, params=params)
+            response = requests.get(url, params=params, timeout=10)
             response.raise_for_status()
             return response.json()
 
         except requests.exceptions.RequestException as e:
             print(f"Error fetching movie details: {e}")
-            return None
+            raise
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type(requests.exceptions.RequestException),
+    )
     def get_tv_details(self, tv_id: int) -> Optional[Dict[str, Any]]:
         """Get detailed TV show information"""
         url = f"{self.base_url}/tv/{tv_id}"
         params = {"api_key": self.api_key}
 
         try:
-            response = requests.get(url, params=params)
+            response = requests.get(url, params=params, timeout=10)
             response.raise_for_status()
             return response.json()
 
         except requests.exceptions.RequestException as e:
             print(f"Error fetching TV details: {e}")
-            return None
+            raise
 
     def get_metadata(self, search_result: Dict[str, Any]) -> Dict[str, Any]:
         """Get metadata (runtime, genres) from search result"""
@@ -158,6 +184,11 @@ class TMDBCoverFetcher:
 
         return metadata
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type(requests.exceptions.RequestException),
+    )
     def download_and_resize_image(
         self, image_url: str, save_path: Path, max_width: int = 1000
     ) -> bool:
@@ -189,6 +220,9 @@ class TMDBCoverFetcher:
             image.save(save_path, "JPEG", quality=85, optimize=True)
             return True
 
+        except requests.exceptions.RequestException:
+            # Re-raise for retry decorator
+            raise
         except Exception as e:
             print(f"  Error downloading/resizing image: {e}")
             return False

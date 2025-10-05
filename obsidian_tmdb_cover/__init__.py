@@ -1,7 +1,13 @@
 """Obsidian TMDB Cover - Add TMDB cover images to Obsidian notes."""
 
-__version__ = "0.1.0"
-__author__ = "Your Name"
+from importlib.metadata import version, PackageNotFoundError
+
+try:
+    __version__ = version("obsidian-tmdb-cover")
+except PackageNotFoundError:
+    __version__ = "0.0.0"  # Fallback for development
+
+__author__ = "Riku Lindblad"
 
 from .fetcher import TMDBCoverFetcher
 from .updater import ObsidianNoteUpdater

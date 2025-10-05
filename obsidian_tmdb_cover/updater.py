@@ -96,8 +96,12 @@ class ObsidianNoteUpdater:
             relative_path = local_path.relative_to(note_dir)
             return str(relative_path).replace("\\", "/")  # Use forward slashes
         except ValueError:
-            # If relative_to fails, use the full path
-            return str(local_path)
+            # If relative_to fails, compute path relative to the note's directory
+            # This handles cases where attachments folder is outside note's directory
+            import os
+
+            relative_path_str = os.path.relpath(local_path, note_dir)
+            return relative_path_str.replace("\\", "/")
 
     def update_cover(self, cover_path: str) -> bool:
         """Add or update the cover property in frontmatter"""
