@@ -143,7 +143,27 @@ class ObsidianNoteUpdater:
             all_tags.sort()
             self.frontmatter["tags"] = all_tags
 
+        if "tmdb_id" in metadata:
+            self.frontmatter["tmdb_id"] = metadata["tmdb_id"]
+
+        if "tmdb_type" in metadata:
+            self.frontmatter["tmdb_type"] = metadata["tmdb_type"]
+
         return self._save_file()
+
+    def get_tmdb_id(self) -> Optional[int]:
+        """Get stored TMDB ID from frontmatter"""
+        tmdb_id = self.frontmatter.get("tmdb_id")
+        if tmdb_id and isinstance(tmdb_id, int):
+            return tmdb_id
+        return None
+
+    def get_tmdb_type(self) -> Optional[str]:
+        """Get stored TMDB type (movie or tv) from frontmatter"""
+        tmdb_type = self.frontmatter.get("tmdb_type")
+        if tmdb_type in ["movie", "tv"]:
+            return tmdb_type
+        return None
 
     def _save_file(self) -> bool:
         """Save the updated content back to the file"""

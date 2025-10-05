@@ -11,8 +11,10 @@ from .updater import ObsidianNoteUpdater
 from .utils import create_attachments_dir
 
 
-def _determine_processing_needs(note: ObsidianNoteUpdater) -> tuple[bool, bool]:
-    """Determine if note needs cover and/or metadata"""
+def _determine_processing_needs(
+    note: ObsidianNoteUpdater,
+) -> tuple[bool, bool, bool]:
+    """Determine if note needs cover, metadata, and/or TMDB ID"""
     # Check if we need to fetch a cover
     existing_cover = note.frontmatter.get("cover")
     needs_cover = (
@@ -31,7 +33,12 @@ def _determine_processing_needs(note: ObsidianNoteUpdater) -> tuple[bool, bool]:
     )
     needs_metadata = not existing_runtime or not has_genre_tags
 
-    return needs_cover, needs_metadata
+    # Check if we need to store TMDB ID
+    tmdb_id = note.get_tmdb_id()
+    tmdb_type = note.get_tmdb_type()
+    needs_tmdb_id = not tmdb_id or not tmdb_type
+
+    return needs_cover, needs_metadata, needs_tmdb_id
 
 
 def _fetch_required_data(
@@ -40,34 +47,71 @@ def _fetch_required_data(
     title: str,
     needs_cover: bool,
     needs_metadata: bool,
+    needs_tmdb_id: bool,
 ) -> tuple[Optional[str], Dict[str, Any]]:
     """Fetch cover URL and/or metadata based on needs"""
     image_url = None
     metadata: Dict[str, Any] = {}
     existing_cover = note.frontmatter.get("cover")
 
-    if needs_cover and needs_metadata:
-        if note.has_external_cover():
-            image_url = note.get_existing_cover_url()
-            print("  Found external cover URL, will download locally")
+    # Check if we have stored TMDB ID for faster direct lookup
+    tmdb_id = note.get_tmdb_id()
+    tmdb_type = note.get_tmdb_type()
+
+    if tmdb_id and tmdb_type:
+        # We have TMDB ID, use direct lookup
+        print(f"  Using stored TMDB ID: {tmdb_id} ({tmdb_type})")
+
+        # If we only need the TMDB ID and already have it, we're done
+        if not needs_cover and not needs_metadata and not needs_tmdb_id:
+            return None, {}
+
+        if needs_cover and needs_metadata:
+            if note.has_external_cover():
+                image_url = note.get_existing_cover_url()
+                print("  Found external cover URL, will download locally")
+                _, metadata = fetcher.get_cover_and_metadata_by_id(tmdb_id, tmdb_type)
+            else:
+                image_url, metadata = fetcher.get_cover_and_metadata_by_id(
+                    tmdb_id, tmdb_type
+                )
+        elif needs_cover:
+            if note.has_external_cover():
+                image_url = note.get_existing_cover_url()
+                print("  Found external cover URL, will download locally")
+            else:
+                image_url = fetcher.get_cover_url_by_id(tmdb_id, tmdb_type)
+            # Also get metadata to ensure we have the TMDB ID
+            metadata = fetcher.get_metadata_by_id(tmdb_id, tmdb_type)
+        elif needs_metadata:
+            print("  Fetching metadata only...")
+            metadata = fetcher.get_metadata_by_id(tmdb_id, tmdb_type)
+    else:
+        # No stored ID, search by title
+        if needs_cover and needs_metadata:
+            if note.has_external_cover():
+                image_url = note.get_existing_cover_url()
+                print("  Found external cover URL, will download locally")
+                _, metadata = fetcher.get_cover_and_metadata(title)
+            elif existing_cover and note._is_html_color_code(existing_cover):
+                print(f"  Replacing color placeholder: {existing_cover}")
+                image_url, metadata = fetcher.get_cover_and_metadata(title)
+            elif not existing_cover:
+                image_url, metadata = fetcher.get_cover_and_metadata(title)
+        elif needs_cover:
+            if note.has_external_cover():
+                image_url = note.get_existing_cover_url()
+                print("  Found external cover URL, will download locally")
+                # Need to fetch metadata to get TMDB ID
+                _, metadata = fetcher.get_cover_and_metadata(title)
+            elif existing_cover and note._is_html_color_code(existing_cover):
+                print(f"  Replacing color placeholder: {existing_cover}")
+                image_url, metadata = fetcher.get_cover_and_metadata(title)
+            elif not existing_cover:
+                image_url, metadata = fetcher.get_cover_and_metadata(title)
+        elif needs_metadata or needs_tmdb_id:
+            print("  Fetching metadata only...")
             _, metadata = fetcher.get_cover_and_metadata(title)
-        elif existing_cover and note._is_html_color_code(existing_cover):
-            print(f"  Replacing color placeholder: {existing_cover}")
-            image_url, metadata = fetcher.get_cover_and_metadata(title)
-        elif not existing_cover:
-            image_url, metadata = fetcher.get_cover_and_metadata(title)
-    elif needs_cover:
-        if note.has_external_cover():
-            image_url = note.get_existing_cover_url()
-            print("  Found external cover URL, will download locally")
-        elif existing_cover and note._is_html_color_code(existing_cover):
-            print(f"  Replacing color placeholder: {existing_cover}")
-            image_url = fetcher.get_cover_url(title)
-        elif not existing_cover:
-            image_url = fetcher.get_cover_url(title)
-    elif needs_metadata:
-        print("  Fetching metadata only...")
-        _, metadata = fetcher.get_cover_and_metadata(title)
 
     return image_url, metadata
 
@@ -125,17 +169,19 @@ def main() -> None:
             print(f"  Title: {title}")
 
             # Determine what the note needs
-            needs_cover, needs_metadata = _determine_processing_needs(note)
+            needs_cover, needs_metadata, needs_tmdb_id = _determine_processing_needs(
+                note
+            )
 
-            # Skip if we don't need cover or metadata
-            if not needs_cover and not needs_metadata:
-                print("  Already has cover and metadata, skipping...")
+            # Skip only if we don't need anything at all
+            if not needs_cover and not needs_metadata and not needs_tmdb_id:
+                print("  Already has cover, metadata, and TMDB ID, skipping...")
                 skipped += 1
                 continue
 
             # Fetch required data
             image_url, metadata = _fetch_required_data(
-                tmdb, note, title, needs_cover, needs_metadata
+                tmdb, note, title, needs_cover, needs_metadata, needs_tmdb_id
             )
 
             success = False

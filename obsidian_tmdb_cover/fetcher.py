@@ -148,6 +148,10 @@ class TMDBCoverFetcher:
 
         metadata = {}
 
+        # Store TMDB ID and type for future direct lookups
+        metadata["tmdb_id"] = media_id
+        metadata["tmdb_type"] = media_type
+
         # Extract runtime
         if media_type == "movie":
             runtime = details.get("runtime")
@@ -183,6 +187,100 @@ class TMDBCoverFetcher:
                 metadata["genre_tags"] = genre_tags
 
         return metadata
+
+    def get_metadata_by_id(self, media_id: int, media_type: str) -> Dict[str, Any]:
+        """Get metadata directly by TMDB ID and type (faster than search)"""
+        if media_type not in ["movie", "tv"]:
+            return {}
+
+        details = None
+        if media_type == "movie":
+            details = self.get_movie_details(media_id)
+        elif media_type == "tv":
+            details = self.get_tv_details(media_id)
+
+        if not details:
+            return {}
+
+        metadata: Dict[str, Any] = {}
+
+        # Store TMDB ID and type
+        metadata["tmdb_id"] = media_id
+        metadata["tmdb_type"] = media_type
+
+        # Extract runtime
+        if media_type == "movie":
+            runtime = details.get("runtime")
+            if runtime:
+                metadata["runtime"] = runtime
+        elif media_type == "tv":
+            episode_run_time = details.get("episode_run_time")
+            if episode_run_time and len(episode_run_time) > 0:
+                metadata["runtime"] = episode_run_time[0]
+
+        # Extract and format genres
+        genre_ids = [g["id"] for g in details.get("genres", [])]
+        if genre_ids:
+            genre_mapping = self._get_genres(media_type)
+            genre_tags = []
+            for genre_id in genre_ids:
+                if genre_id in genre_mapping:
+                    genre_name = genre_mapping[genre_id]
+                    sanitized_name = self._sanitize_genre_name(genre_name)
+                    genre_tag = f"{media_type}/{sanitized_name}"
+                    genre_tags.append(genre_tag)
+
+            if genre_tags:
+                metadata["genre_tags"] = genre_tags
+
+        return metadata
+
+    def get_cover_url_by_id(self, media_id: int, media_type: str) -> Optional[str]:
+        """Get cover URL directly by TMDB ID and type (faster than search)"""
+        if media_type not in ["movie", "tv"]:
+            return None
+
+        details = None
+        if media_type == "movie":
+            details = self.get_movie_details(media_id)
+        elif media_type == "tv":
+            details = self.get_tv_details(media_id)
+
+        if not details or not details.get("poster_path"):
+            return None
+
+        cover_url = f"{self.image_base_url}{details['poster_path']}"
+        name = details.get("title") or details.get("name", "Unknown")
+        print(f"  Found {media_type}: {name} (direct ID lookup)")
+        return cover_url
+
+    def get_cover_and_metadata_by_id(
+        self, media_id: int, media_type: str
+    ) -> tuple[Optional[str], Dict[str, Any]]:
+        """Get both cover URL and metadata by TMDB ID and type (faster than search)"""
+        if media_type not in ["movie", "tv"]:
+            return None, {}
+
+        details = None
+        if media_type == "movie":
+            details = self.get_movie_details(media_id)
+        elif media_type == "tv":
+            details = self.get_tv_details(media_id)
+
+        if not details:
+            return None, {}
+
+        cover_url = None
+        if details.get("poster_path"):
+            cover_url = f"{self.image_base_url}{details['poster_path']}"
+            name = details.get("title") or details.get("name", "Unknown")
+            print(f"  Found {media_type}: {name} (direct ID lookup)")
+
+        # Create a search_result-like dict to reuse get_metadata
+        search_result = {"media_type": media_type, "id": media_id}
+        metadata = self.get_metadata(search_result)
+
+        return cover_url, metadata
 
     @retry(
         stop=stop_after_attempt(3),

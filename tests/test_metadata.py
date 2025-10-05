@@ -41,10 +41,17 @@ Some content here.
         expected_tags = ["existing-tag", "movie/Action", "movie/Adventure"]
         assert set(note.frontmatter["tags"]) == set(expected_tags)
 
-        # Test metadata update
-        metadata = {"runtime": 150, "genre_tags": ["movie/Comedy", "movie/Drama"]}
+        # Test metadata update with TMDB ID
+        metadata = {
+            "runtime": 150,
+            "genre_tags": ["movie/Comedy", "movie/Drama"],
+            "tmdb_id": 12345,
+            "tmdb_type": "movie",
+        }
         assert note.update_metadata(metadata)
         assert note.frontmatter["runtime"] == 150
+        assert note.frontmatter["tmdb_id"] == 12345
+        assert note.frontmatter["tmdb_type"] == "movie"
         expected_final_tags = [
             "existing-tag",
             "movie/Action",
@@ -53,6 +60,10 @@ Some content here.
             "movie/Drama",
         ]
         assert set(note.frontmatter["tags"]) == set(expected_final_tags)
+
+        # Test TMDB ID retrieval
+        assert note.get_tmdb_id() == 12345
+        assert note.get_tmdb_type() == "movie"
 
     finally:
         # Clean up
@@ -213,6 +224,12 @@ def test_tmdb_fetcher_with_api():
     assert cover_url is not None, "Should find cover for The Matrix"
     assert isinstance(metadata, dict), "Should return metadata dict"
 
+    # Test that TMDB ID is stored
+    assert "tmdb_id" in metadata, "Should store TMDB ID"
+    assert "tmdb_type" in metadata, "Should store TMDB type"
+    assert isinstance(metadata["tmdb_id"], int), "TMDB ID should be an integer"
+    assert metadata["tmdb_type"] in ["movie", "tv"], "Type should be movie or tv"
+
     if "runtime" in metadata:
         assert metadata["runtime"] > 0, "Runtime should be positive"
 
@@ -222,3 +239,30 @@ def test_tmdb_fetcher_with_api():
             tag.startswith("movie/") or tag.startswith("tv/")
             for tag in metadata["genre_tags"]
         ), "Genre tags should have proper prefix"
+
+
+@pytest.mark.skipif(not os.getenv("TMDB_API_KEY"), reason="TMDB_API_KEY not set")
+def test_tmdb_fetcher_by_id():
+    """Test TMDBCoverFetcher direct ID lookup (requires API key)"""
+    api_key = os.getenv("TMDB_API_KEY")
+    fetcher = TMDBCoverFetcher(api_key)
+
+    # The Matrix has TMDB ID 603 (movie)
+    matrix_id = 603
+    media_type = "movie"
+
+    # Test direct metadata fetch
+    metadata = fetcher.get_metadata_by_id(matrix_id, media_type)
+    assert isinstance(metadata, dict), "Should return metadata dict"
+    assert metadata["tmdb_id"] == matrix_id, "Should have correct TMDB ID"
+    assert metadata["tmdb_type"] == media_type, "Should have correct type"
+
+    # Test direct cover URL fetch
+    cover_url = fetcher.get_cover_url_by_id(matrix_id, media_type)
+    assert cover_url is not None, "Should find cover for The Matrix"
+    assert "image.tmdb.org" in cover_url, "Cover URL should be from TMDB"
+
+    # Test combined fetch
+    cover_url2, metadata2 = fetcher.get_cover_and_metadata_by_id(matrix_id, media_type)
+    assert cover_url2 is not None, "Should find cover"
+    assert metadata2["tmdb_id"] == matrix_id, "Should have correct TMDB ID"
