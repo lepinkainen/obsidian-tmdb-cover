@@ -9,6 +9,7 @@ from typing import Dict, Any, Optional
 from .fetcher import TMDBCoverFetcher
 from .updater import ObsidianNoteUpdater
 from .utils import create_attachments_dir
+from .tui import select_tmdb_result
 
 
 def _determine_processing_needs(
@@ -48,18 +49,18 @@ def _fetch_required_data(
     needs_cover: bool,
     needs_metadata: bool,
     needs_tmdb_id: bool,
+    force: bool = False,
 ) -> tuple[Optional[str], Dict[str, Any]]:
     """Fetch cover URL and/or metadata based on needs"""
     image_url = None
     metadata: Dict[str, Any] = {}
-    existing_cover = note.frontmatter.get("cover")
 
     # Check if we have stored TMDB ID for faster direct lookup
     tmdb_id = note.get_tmdb_id()
     tmdb_type = note.get_tmdb_type()
 
-    if tmdb_id and tmdb_type:
-        # We have TMDB ID, use direct lookup
+    if tmdb_id and tmdb_type and not force:
+        # We have TMDB ID, use direct lookup (unless force flag is set)
         print(f"  Using stored TMDB ID: {tmdb_id} ({tmdb_type})")
 
         # If we only need the TMDB ID and already have it, we're done
@@ -87,31 +88,69 @@ def _fetch_required_data(
             print("  Fetching metadata only...")
             metadata = fetcher.get_metadata_by_id(tmdb_id, tmdb_type)
     else:
-        # No stored ID, search by title
+        # No stored ID (or force flag set), search by title with interactive selection
+        if force and tmdb_id and tmdb_type:
+            print(f"  Force mode: ignoring stored TMDB ID {tmdb_id} ({tmdb_type})")
+
+        # Get up to 10 results to show user
+        results = fetcher.search_multi(title, limit=10)
+
+        if not results:
+            print("  No results found")
+            return None, {}
+
+        # If only one result, use it automatically
+        selected_result: Optional[Dict[str, Any]]
+        if len(results) == 1:
+            selected_result = results[0]
+            media_type = (
+                "movie" if selected_result.get("media_type") == "movie" else "TV show"
+            )
+            name = selected_result.get("title") or selected_result.get(
+                "name", "Unknown"
+            )
+            print(f"  Found {media_type}: {name}")
+        else:
+            # Show interactive selector
+            print(f"  Found {len(results)} results, showing selector...")
+            selected_result = select_tmdb_result(title, results)
+
+            if not selected_result:
+                print("  Selection skipped by user")
+                return None, {}
+
+            media_type = (
+                "movie" if selected_result.get("media_type") == "movie" else "TV show"
+            )
+            name = selected_result.get("title") or selected_result.get(
+                "name", "Unknown"
+            )
+            print(f"  Selected {media_type}: {name}")
+
+        # Now fetch cover and/or metadata based on the selected result
+        if not selected_result.get("poster_path"):
+            print("  Selected result has no poster")
+            return None, {}
+
+        cover_url = f"{fetcher.image_base_url}{selected_result['poster_path']}"
+        metadata = fetcher.get_metadata(selected_result)
+
+        # Handle different scenarios
         if needs_cover and needs_metadata:
             if note.has_external_cover():
                 image_url = note.get_existing_cover_url()
                 print("  Found external cover URL, will download locally")
-                _, metadata = fetcher.get_cover_and_metadata(title)
-            elif existing_cover and note._is_html_color_code(existing_cover):
-                print(f"  Replacing color placeholder: {existing_cover}")
-                image_url, metadata = fetcher.get_cover_and_metadata(title)
-            elif not existing_cover:
-                image_url, metadata = fetcher.get_cover_and_metadata(title)
+            else:
+                image_url = cover_url
         elif needs_cover:
             if note.has_external_cover():
                 image_url = note.get_existing_cover_url()
                 print("  Found external cover URL, will download locally")
-                # Need to fetch metadata to get TMDB ID
-                _, metadata = fetcher.get_cover_and_metadata(title)
-            elif existing_cover and note._is_html_color_code(existing_cover):
-                print(f"  Replacing color placeholder: {existing_cover}")
-                image_url, metadata = fetcher.get_cover_and_metadata(title)
-            elif not existing_cover:
-                image_url, metadata = fetcher.get_cover_and_metadata(title)
+            else:
+                image_url = cover_url
         elif needs_metadata or needs_tmdb_id:
-            print("  Fetching metadata only...")
-            _, metadata = fetcher.get_cover_and_metadata(title)
+            # Just metadata, no cover needed
+            pass
 
     return image_url, metadata
 
@@ -123,6 +162,12 @@ def main() -> None:
     )
     parser.add_argument(
         "directory", help="Path to Obsidian vault or folder containing markdown files"
+    )
+    parser.add_argument(
+        "--force",
+        "-f",
+        action="store_true",
+        help="Force re-search even if TMDB ID is already stored (useful for fixing wrong data)",
     )
 
     args = parser.parse_args()
@@ -173,15 +218,26 @@ def main() -> None:
                 note
             )
 
-            # Skip only if we don't need anything at all
-            if not needs_cover and not needs_metadata and not needs_tmdb_id:
+            # Skip only if we don't need anything at all (unless force flag is set)
+            if (
+                not needs_cover
+                and not needs_metadata
+                and not needs_tmdb_id
+                and not args.force
+            ):
                 print("  Already has cover, metadata, and TMDB ID, skipping...")
                 skipped += 1
                 continue
 
             # Fetch required data
             image_url, metadata = _fetch_required_data(
-                tmdb, note, title, needs_cover, needs_metadata, needs_tmdb_id
+                tmdb,
+                note,
+                title,
+                needs_cover,
+                needs_metadata,
+                needs_tmdb_id,
+                args.force,
             )
 
             success = False

@@ -36,10 +36,10 @@ class TMDBCoverFetcher:
         wait=wait_exponential(multiplier=1, min=1, max=10),
         retry=retry_if_exception_type(requests.exceptions.RequestException),
     )
-    def search_multi(self, query: str) -> Optional[Dict[str, Any]]:
+    def search_multi(self, query: str, limit: int = 1) -> list[Dict[str, Any]]:
         """
         Search for movies and TV shows simultaneously
-        Returns the first result with a poster
+        Returns up to 'limit' results with posters (default 1 for backwards compatibility)
         """
         url = f"{self.base_url}/search/multi"
         params = {"api_key": self.api_key, "query": query, "include_adult": "false"}
@@ -50,13 +50,16 @@ class TMDBCoverFetcher:
             data = response.json()
 
             # Filter results to only movies and TV shows with posters
+            results = []
             for result in data.get("results", []):
                 if result.get("media_type") in ["movie", "tv"] and result.get(
                     "poster_path"
                 ):
-                    return result
+                    results.append(result)
+                    if len(results) >= limit:
+                        break
 
-            return None
+            return results
 
         except requests.exceptions.RequestException as e:
             print(f"Error searching TMDB: {e}")
@@ -327,9 +330,10 @@ class TMDBCoverFetcher:
 
     def get_cover_url(self, title: str) -> Optional[str]:
         """Get the cover image URL for a movie/TV show title"""
-        result = self.search_multi(title)
+        results = self.search_multi(title, limit=1)
 
-        if result and result.get("poster_path"):
+        if results and results[0].get("poster_path"):
+            result = results[0]
             cover_url = f"{self.image_base_url}{result['poster_path']}"
             media_type = "movie" if result.get("media_type") == "movie" else "TV show"
             name = result.get("title") or result.get("name", "Unknown")
@@ -342,11 +346,12 @@ class TMDBCoverFetcher:
         self, title: str
     ) -> tuple[Optional[str], Dict[str, Any]]:
         """Get both cover URL and metadata for a movie/TV show title"""
-        result = self.search_multi(title)
+        results = self.search_multi(title, limit=1)
 
-        if not result or not result.get("poster_path"):
+        if not results or not results[0].get("poster_path"):
             return None, {}
 
+        result = results[0]
         cover_url = f"{self.image_base_url}{result['poster_path']}"
         media_type = "movie" if result.get("media_type") == "movie" else "TV show"
         name = result.get("title") or result.get("name", "Unknown")

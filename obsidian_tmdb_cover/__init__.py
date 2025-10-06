@@ -12,10 +12,12 @@ __author__ = "Riku Lindblad"
 from .fetcher import TMDBCoverFetcher
 from .updater import ObsidianNoteUpdater
 from .utils import sanitize_filename, create_attachments_dir
+from .tui import select_tmdb_result
 
 __all__ = [
     "TMDBCoverFetcher",
     "ObsidianNoteUpdater",
     "sanitize_filename",
     "create_attachments_dir",
+    "select_tmdb_result",
 ]
