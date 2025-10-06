@@ -10,6 +10,7 @@ from .fetcher import TMDBCoverFetcher
 from .updater import ObsidianNoteUpdater
 from .utils import create_attachments_dir
 from .tui import select_tmdb_result
+from .content_builder import build_tmdb_content
 
 
 def _determine_processing_needs(
@@ -155,19 +156,83 @@ def _fetch_required_data(
     return image_url, metadata
 
 
+def _generate_body_content(
+    fetcher: TMDBCoverFetcher,
+    note: ObsidianNoteUpdater,
+    sections: list[str],
+    force: bool = False,
+) -> bool:
+    """Generate and inject TMDB content into note body"""
+    # Check if we need to update content
+    if not force and note.has_tmdb_content_markers():
+        # Content already exists, check if we should update
+        print("  Note already has TMDB content sections")
+
+    # Get TMDB ID and type
+    tmdb_id = note.get_tmdb_id()
+    tmdb_type = note.get_tmdb_type()
+
+    if not tmdb_id or not tmdb_type:
+        print("  No TMDB ID found, cannot generate content")
+        return False
+
+    try:
+        # Fetch full details
+        details = None
+        if tmdb_type == "tv":
+            details = fetcher.get_full_tv_details(tmdb_id)
+        elif tmdb_type == "movie":
+            details = fetcher.get_full_movie_details(tmdb_id)
+
+        if not details:
+            print("  Failed to fetch TMDB details")
+            return False
+
+        # Build content sections
+        content = build_tmdb_content(details, tmdb_type, sections)
+
+        if not content:
+            print("  No content generated")
+            return False
+
+        # Inject/update content in note
+        if note.update_body_content(content):
+            print(f"  ✓ Generated content sections: {', '.join(sections)}")
+            return True
+        else:
+            print("  ✗ Failed to update note content")
+            return False
+
+    except Exception as e:
+        print(f"  ✗ Error generating content: {e}")
+        return False
+
+
 def main() -> None:
-    """Process all markdown files in a directory"""
+    """Process markdown files in a directory or a single file"""
     parser = argparse.ArgumentParser(
         description="Add TMDB cover images to Obsidian notes"
     )
     parser.add_argument(
-        "directory", help="Path to Obsidian vault or folder containing markdown files"
+        "path", help="Path to Obsidian vault, folder, or single markdown file"
     )
     parser.add_argument(
         "--force",
         "-f",
         action="store_true",
         help="Force re-search even if TMDB ID is already stored (useful for fixing wrong data)",
+    )
+    parser.add_argument(
+        "--generate-content",
+        "-g",
+        action="store_true",
+        help="Generate TMDB content sections in note body (overview, info table, seasons)",
+    )
+    parser.add_argument(
+        "--content-sections",
+        type=str,
+        default="overview,info,seasons",
+        help="Comma-separated list of sections to generate (default: overview,info,seasons)",
     )
 
     args = parser.parse_args()
@@ -179,28 +244,44 @@ def main() -> None:
         print("  export TMDB_API_KEY=your_api_key_here")
         sys.exit(1)
 
-    vault_path = Path(args.directory)
+    input_path = Path(args.path)
 
-    if not vault_path.exists():
-        print(f"Path does not exist: {vault_path}")
+    if not input_path.exists():
+        print(f"Path does not exist: {input_path}")
         sys.exit(1)
 
-    if not vault_path.is_dir():
-        print(f"Path is not a directory: {vault_path}")
-        sys.exit(1)
+    # Determine if input is a file or directory
+    md_files: list[Path] = []
+    vault_path: Path
 
-    # Find all markdown files
-    md_files = list(vault_path.rglob("*.md"))
-    print(f"Found {len(md_files)} markdown files")
+    if input_path.is_file():
+        # Single file mode
+        if not input_path.suffix == ".md":
+            print(f"File is not a markdown file: {input_path}")
+            sys.exit(1)
+        md_files = [input_path]
+        vault_path = input_path.parent
+        print(f"Processing single file: {input_path.name}")
+    elif input_path.is_dir():
+        # Directory mode
+        vault_path = input_path
+        md_files = list(vault_path.rglob("*.md"))
+        print(f"Found {len(md_files)} markdown files")
 
-    if len(md_files) == 0:
-        print("No markdown files found in the directory")
+        if len(md_files) == 0:
+            print("No markdown files found in the directory")
+            sys.exit(1)
+    else:
+        print(f"Path is neither a file nor directory: {input_path}")
         sys.exit(1)
 
     tmdb = TMDBCoverFetcher(API_KEY)
     processed = 0
     skipped = 0
     failed = 0
+
+    # Parse content sections
+    content_sections = [s.strip() for s in args.content_sections.split(",")]
 
     # Create attachments directory
     attachments_dir = create_attachments_dir(vault_path)
@@ -218,12 +299,13 @@ def main() -> None:
                 note
             )
 
-            # Skip only if we don't need anything at all (unless force flag is set)
+            # Skip only if we don't need anything at all (unless force flag or generate_content is set)
             if (
                 not needs_cover
                 and not needs_metadata
                 and not needs_tmdb_id
                 and not args.force
+                and not args.generate_content
             ):
                 print("  Already has cover, metadata, and TMDB ID, skipping...")
                 skipped += 1
@@ -266,9 +348,12 @@ def main() -> None:
             if metadata:
                 if note.update_metadata(metadata):
                     runtime = metadata.get("runtime")
+                    total_episodes = metadata.get("total_episodes")
                     genre_tags = metadata.get("genre_tags", [])
                     if runtime:
                         print(f"  ✓ Added runtime: {runtime} minutes")
+                    if total_episodes:
+                        print(f"  ✓ Added total episodes: {total_episodes}")
                     if genre_tags:
                         print(f"  ✓ Added genres: {', '.join(genre_tags)}")
 
@@ -279,6 +364,16 @@ def main() -> None:
                     print("  ✗ Failed to update metadata")
             elif needs_metadata:
                 print("  ✗ No metadata found")
+
+            # Generate content sections if requested
+            if args.generate_content:
+                # Re-read note to get updated metadata (including TMDB ID)
+                note = ObsidianNoteUpdater(str(file_path))
+                content_success = _generate_body_content(
+                    tmdb, note, content_sections, args.force
+                )
+                if content_success:
+                    success = True
 
             if (
                 success

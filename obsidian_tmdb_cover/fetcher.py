@@ -118,10 +118,15 @@ class TMDBCoverFetcher:
         wait=wait_exponential(multiplier=1, min=1, max=10),
         retry=retry_if_exception_type(requests.exceptions.RequestException),
     )
-    def get_tv_details(self, tv_id: int) -> Optional[Dict[str, Any]]:
+    def get_tv_details(
+        self, tv_id: int, append_to_response: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
         """Get detailed TV show information"""
         url = f"{self.base_url}/tv/{tv_id}"
         params = {"api_key": self.api_key}
+
+        if append_to_response:
+            params["append_to_response"] = append_to_response
 
         try:
             response = requests.get(url, params=params, timeout=10)
@@ -130,6 +135,44 @@ class TMDBCoverFetcher:
 
         except requests.exceptions.RequestException as e:
             print(f"Error fetching TV details: {e}")
+            raise
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type(requests.exceptions.RequestException),
+    )
+    def get_full_tv_details(self, tv_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Get comprehensive TV show details with external IDs and keywords
+        Uses append_to_response to fetch multiple endpoints in a single API call
+        """
+        append_params = ["external_ids", "keywords", "content_ratings"]
+        return self.get_tv_details(tv_id, append_to_response=",".join(append_params))
+
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=1, max=10),
+        retry=retry_if_exception_type(requests.exceptions.RequestException),
+    )
+    def get_full_movie_details(self, movie_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Get comprehensive movie details with external IDs and keywords
+        Uses append_to_response to fetch multiple endpoints in a single API call
+        """
+        url = f"{self.base_url}/movie/{movie_id}"
+        params = {
+            "api_key": self.api_key,
+            "append_to_response": "external_ids,keywords",
+        }
+
+        try:
+            response = requests.get(url, params=params, timeout=10)
+            response.raise_for_status()
+            return response.json()
+
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching movie details: {e}")
             raise
 
     def get_metadata(self, search_result: Dict[str, Any]) -> Dict[str, Any]:
@@ -172,6 +215,11 @@ class TMDBCoverFetcher:
                     print("  ℹ episode_run_time is empty array")
                 else:
                     print(f"  ℹ episode_run_time value: {episode_run_time}")
+
+            # Extract total episode count for TV shows
+            total_episodes = details.get("number_of_episodes")
+            if total_episodes:
+                metadata["total_episodes"] = total_episodes
 
         # Extract and format genres
         genre_ids = [g["id"] for g in details.get("genres", [])]
@@ -220,6 +268,11 @@ class TMDBCoverFetcher:
             episode_run_time = details.get("episode_run_time")
             if episode_run_time and len(episode_run_time) > 0:
                 metadata["runtime"] = episode_run_time[0]
+
+            # Extract total episode count for TV shows
+            total_episodes = details.get("number_of_episodes")
+            if total_episodes:
+                metadata["total_episodes"] = total_episodes
 
         # Extract and format genres
         genre_ids = [g["id"] for g in details.get("genres", [])]

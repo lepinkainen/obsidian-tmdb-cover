@@ -133,6 +133,9 @@ class ObsidianNoteUpdater:
         if "runtime" in metadata:
             self.frontmatter["runtime"] = metadata["runtime"]
 
+        if "total_episodes" in metadata:
+            self.frontmatter["total_episodes"] = metadata["total_episodes"]
+
         if "genre_tags" in metadata:
             existing_tags = self.frontmatter.get("tags", [])
             if not isinstance(existing_tags, list):
@@ -164,6 +167,62 @@ class ObsidianNoteUpdater:
         if tmdb_type in ["movie", "tv"]:
             return tmdb_type
         return None
+
+    def has_tmdb_content_markers(self) -> bool:
+        """Check if body already has TMDB content markers"""
+        return "<!-- TMDB_DATA_START -->" in self.body
+
+    def update_body_content(self, tmdb_content: str) -> bool:
+        """Update/inject TMDB content in body between markers"""
+        start_marker = "<!-- TMDB_DATA_START -->"
+        end_marker = "<!-- TMDB_DATA_END -->"
+
+        if self.has_tmdb_content_markers():
+            # Replace content between markers
+            # Find start and end marker positions
+            start_idx = self.body.find(start_marker)
+            end_idx = self.body.find(end_marker)
+
+            if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+                # Preserve content before start marker
+                before = self.body[:start_idx].rstrip()
+                # Preserve content after end marker (if any)
+                after = self.body[end_idx + len(end_marker) :].lstrip()
+
+                # Reconstruct body with new TMDB content
+                new_body = f"{before}\n\n{start_marker}\n{tmdb_content}\n{end_marker}"
+                if after:
+                    new_body += f"\n{after}"
+
+                self.body = new_body
+            else:
+                # Malformed markers, append new content
+                return self.inject_tmdb_markers(tmdb_content)
+        else:
+            # No markers exist, inject them
+            return self.inject_tmdb_markers(tmdb_content)
+
+        return self._save_file()
+
+    def inject_tmdb_markers(self, tmdb_content: str) -> bool:
+        """Add markers and content to body for first time"""
+        start_marker = "<!-- TMDB_DATA_START -->"
+        end_marker = "<!-- TMDB_DATA_END -->"
+
+        # Ensure body has proper spacing
+        body_stripped = self.body.rstrip()
+
+        # Add markers with content
+        if body_stripped:
+            # User has existing content, add after it
+            self.body = (
+                f"{body_stripped}\n\n{start_marker}\n{tmdb_content}\n{end_marker}\n"
+            )
+        else:
+            # Empty body, just add markers
+            self.body = f"{start_marker}\n{tmdb_content}\n{end_marker}\n"
+
+        return self._save_file()
 
     def _save_file(self) -> bool:
         """Save the updated content back to the file"""

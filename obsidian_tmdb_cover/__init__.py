@@ -13,6 +13,7 @@ from .fetcher import TMDBCoverFetcher
 from .updater import ObsidianNoteUpdater
 from .utils import sanitize_filename, create_attachments_dir
 from .tui import select_tmdb_result
+from .content_builder import build_tmdb_content
 
 __all__ = [
     "TMDBCoverFetcher",
@@ -20,4 +21,5 @@ __all__ = [
     "sanitize_filename",
     "create_attachments_dir",
     "select_tmdb_result",
+    "build_tmdb_content",
 ]
