@@ -9,7 +9,7 @@ from typing import Dict, Any, Optional
 from .fetcher import TMDBCoverFetcher
 from .updater import ObsidianNoteUpdater
 from .utils import create_attachments_dir
-from .tui import select_tmdb_result
+from .tui import select_tmdb_result, StopProcessing
 from .content_builder import build_tmdb_content
 
 
@@ -383,6 +383,10 @@ def main() -> None:
                 processed += 1
             else:
                 failed += 1
+
+        except StopProcessing:
+            print("\n⚠️  Processing stopped by user")
+            break
 
         except Exception as e:
             print(f"  ✗ Error: {e}")

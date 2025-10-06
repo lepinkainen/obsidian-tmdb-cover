@@ -9,6 +9,12 @@ from textual.screen import ModalScreen
 from textual.message import Message
 
 
+class StopProcessing(Exception):
+    """Exception raised when user wants to stop processing entirely."""
+
+    pass
+
+
 class ResultCard(Static):
     """A card displaying information about a movie/TV show result."""
 
@@ -106,7 +112,7 @@ class SelectionScreen(ModalScreen[Optional[Dict[str, Any]]]):
     }
 
     ResultCard .media-type {
-        color: $secondary;
+        color: $accent;
         text-style: bold;
     }
 
@@ -167,7 +173,8 @@ class SelectionScreen(ModalScreen[Optional[Dict[str, Any]]]):
                 for i, result in enumerate(self.results):
                     yield ResultCard(result, i)
             with Container(id="button-container"):
-                yield Button("Skip", variant="error", id="skip-button")
+                yield Button("Skip", variant="warning", id="skip-button")
+                yield Button("Stop Processing", variant="error", id="stop-button")
 
     def on_mount(self) -> None:
         """Focus first result card when mounted."""
@@ -183,6 +190,8 @@ class SelectionScreen(ModalScreen[Optional[Dict[str, Any]]]):
         """Handle button presses."""
         if event.button.id == "skip-button":
             self.dismiss(None)
+        elif event.button.id == "stop-button":
+            raise StopProcessing("User requested to stop processing")
 
     def action_cancel(self) -> None:
         """Cancel selection."""
