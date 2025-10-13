@@ -74,6 +74,10 @@ tags: [movie/Action, movie/Science-Fiction]
 - TMDB API key (free)
 - Obsidian vault with markdown files
 
+## Contributing
+
+New to the project? Read the [Repository Guidelines](AGENTS.md) for structure, tooling, and contribution expectations.
+
 ## License
 
 MIT
