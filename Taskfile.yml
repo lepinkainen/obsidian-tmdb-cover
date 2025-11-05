@@ -1,89 +1,88 @@
-# Taskfile for obsidian-tmdb-cover
-# See: https://taskfile.dev/
 version: '3'
 
 vars:
+  BUILD_DIR: build
   PROJECT_NAME: obsidian-tmdb-cover
-  VERSION:
-    sh: grep 'version = ' pyproject.toml | head -1 | cut -d'"' -f2
 
 tasks:
-  # Core build task - depends on tests and linting
   build:
-    desc: Build the project
+    desc: Build the CLI after linting and tests
     deps: [test, lint]
     cmds:
-      - task: build-python
+      - task: build-go
 
-  # CI build without tests/linting (run separately in CI)
+  build-linux:
+    desc: Cross-compile for Linux amd64
+    deps: [test, lint]
+    env:
+      GOOS: linux
+      GOARCH: amd64
+    cmds:
+      - task: build-go
+
   build-ci:
-    desc: Build for CI/CD (build only)
+    desc: Compile only (lint and tests run separately in CI)
     cmds:
-      - task: build-python
+      - task: build-go
 
-  # Test tasks
   test:
-    desc: Run tests
+    desc: Run the Go test suite
     cmds:
-      - task: test-python
+      - task: test-go
 
   test-ci:
-    desc: Run tests with coverage for CI
+    desc: Run tests with CI tags and coverage
     cmds:
-      - task: test-python-ci
+      - task: test-go-ci
 
-  # Linting tasks
   lint:
-    desc: Lint code
+    desc: Check formatting and run static analysis
+    deps: [fmt-check]
     cmds:
-      - task: lint-python
+      - go vet ./...
+      - golangci-lint run
 
-  # Clean build artifacts
+  fmt:
+    desc: Format Go sources with goimports
+    cmds:
+      - task: fmt-go
+
   clean:
-    desc: Clean build artifacts
+    desc: Remove build artifacts
     cmds:
-      - rm -rf dist/
-      - rm -rf build/
-      - rm -rf *.egg-info
-      - rm -rf .pytest_cache
-      - rm -rf .mypy_cache
-      - rm -rf .ruff_cache
-      - find . -type d -name __pycache__ -exec rm -rf {} +
+      - rm -rf {{.BUILD_DIR}}
+      - mkdir -p {{.BUILD_DIR}}
+      - rm -f coverage.out
 
-  # Python-specific tasks
-  build-python:
-    desc: Build Python package
+  build-go:
+    desc: Compile the CLI
     cmds:
-      - uv sync
-      - uv build
+      - mkdir -p {{.BUILD_DIR}}
+      - go build -o {{.BUILD_DIR}}/{{.PROJECT_NAME}} ./cmd/obsidian-tmdb-cover
 
-  test-python:
-    desc: Run Python tests
+  test-go:
+    desc: Run Go tests
     cmds:
-      - uv run pytest tests/
+      - go test ./...
 
-  test-python-ci:
-    desc: Run Python tests with coverage for CI
+  test-go-ci:
+    desc: Run Go tests with CI tags and coverage
     cmds:
-      - uv run pytest tests/ --cov=obsidian_tmdb_cover --cov-report=xml --cov-report=term
+      - go test -tags=ci -cover -coverprofile=coverage.out -v ./...
 
-  lint-python:
-    desc: Lint Python code
+  fmt-go:
+    desc: Format Go files using goimports
     cmds:
-      - uv run ruff check .
-      - uv run ruff format .
-      - uv run mypy obsidian_tmdb_cover/
+      - goimports -w .
 
-  # Development task
-  dev:
-    desc: Install in development mode
+  fmt-check:
+    desc: Ensure Go files are already formatted
     cmds:
-      - uv sync
-      - uv run python -m pip install -e .
-
-  # Publish task
-  publish:
-    desc: Publish to PyPI
-    deps: [build]
-    cmds:
-      - uv publish
+      - |
+        OUT="$(goimports -l .)"
+        if [ -n "$OUT" ]; then
+          echo "$OUT"
+          echo
+          echo "Go files require formatting. Run 'task fmt'."
+          exit 1
+        fi
