@@ -1,34 +1,39 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- `obsidian_tmdb_cover/`: core package; `cli.py` drives the CLI entry point, `__main__.py` enables `python -m`, `fetcher.py` wraps TMDB API calls, `content_builder.py` prepares frontmatter, `tui.py` presents selection UI, `updater.py` writes note updates, and `utils.py` hosts shared helpers.
-- `tests/`: pytest suite exercising metadata generation (`test_metadata.py`).
-- `attachments/` holds example output assets; `dist/` stores build artifacts; `Taskfile.yml` defines repeatable automation; `fetch_tv_details.py` is a helper script for bulk TMDB lookups.
+- `cmd/obsidian-tmdb-cover` hosts the CLI entry; `internal/app` orchestrates vault traversal while `internal/{note,tmdb,content,tui,util}` handle markdown, API, rendering, and helpers.
+- Keep transient binaries in `bin/` (gitignored) and anonymised fixtures in `testdata/`; update `llm-shared/` only when syncing shared tooling.
+
+## Shared Tooling & References
+- Review `llm-shared/project_tech_stack.md` and `llm-shared/languages/go.md` for branch flow, dependency policy, and the `goimports` requirement.
+- Use modern shell helpers (`rg`, `fd`) per `llm-shared/shell_commands.md`.
+- When altering structure, run `go run llm-shared/utils/validate-docs.go --dir .` to confirm layout and required files.
 
 ## Build, Test, and Development Commands
-- `uv sync`: install project and dev dependencies from `pyproject.toml`.
-- `task build` (or `task build-python`): build wheel/sdist into `dist/`.
-- `task test` (or `uv run pytest tests/`): execute the unit test suite.
-- `task lint`: run Ruff lint/format plus MyPy type checks.
-- `uv run obsidian-tmdb-cover /path/to/vault`: run the CLI; export `TMDB_API_KEY` first.
+- `task lint` runs the goimports format check plus `go vet` and `golangci-lint`.
+- `task test` runs the standard suite; `task test-ci` adds `-tags=ci` and writes `coverage.out`.
+- `task build` compiles after lint/test locally; `task build-ci` is the compile-only step used in automation.
+- `task fmt` applies goimports formatting; `task clean` clears `build/` and coverage artifacts.
+- `go run ./cmd/obsidian-tmdb-cover --help` remains useful for quick local validation.
 
 ## Coding Style & Naming Conventions
-- Target Python 3.8+ with 4-space indentation and type hints on public functions.
-- Keep modules focused; prefer pure helpers in `utils.py` and side-effect code in `updater.py` or `cli.py`.
-- Run `uv run ruff check .` and `uv run ruff format .` before pushing; honor Ruff fixes.
-- Use snake_case for functions/variables, PascalCase for classes, and update docstrings when behavior shifts.
+- Use the Go version from `llm-shared/versions.md`; format via `goimports -w .` (avoid raw `gofmt`).
+- Exported identifiers use PascalCase, internal helpers use camelCase, and files stay snake_case with `_test.go` reserved for tests.
+- Avoid mutable package-level state and preserve indentation in generated markdown blocks to minimise diffs.
 
 ## Testing Guidelines
-- Place tests under `tests/`, mirroring module names (e.g., metadata logic lives in `test_metadata.py`).
-- Use pytest fixtures and mocks to avoid network calls or vault writes.
-- For coverage, run `uv run pytest tests/ --cov=obsidian_tmdb_cover`; keep new code covered.
-- Name tests `test_<scenario>_<expectation>` so failures point to intent.
+- Co-locate table-driven tests with code under `internal/**`; follow `internal/tmdb/client_internal_test.go` for HTTP client stubs.
+- Run `go test ./...` locally (add `-race` or targeted packages as needed) and call out any unavoidable coverage gaps in PR notes.
 
 ## Commit & Pull Request Guidelines
-- Follow Conventional Commits (`feat:`, `fix:`, `chore:`); keep the subject under 72 characters and in present tense.
-- Separate functional and refactor changes; describe rationale in the body when touching CLI/TUI flows.
-- PRs should summarize impact, list verification commands, link issues, and add screenshots or terminal captures when UX changes.
+- Follow the conventional commit prefixes (`feat:`, `fix:`, `chore:`) with imperative subjects.
+- Keep PRs focused, summarise user impact, list executed checks (`task lint`, `task test-ci`, `task build-ci`), and attach UX screenshots for TUI changes.
 
-## Configuration & Secrets
-- Export `TMDB_API_KEY` in your shell or `.env`; never commit real keys or vault paths.
-- Document any new config flags or environment variables in `README.md` and note defaults in code comments where they are read.
+## CI & Automation
+- `.github/workflows/ci.yml` runs `task lint`, `task test-ci`, and `task build-ci` on pushes to `main`/`develop`, PRs into `main`, and a nightly cron.
+- Reproduce failures locally with the matching Task commands; ensure `goimports` and `golangci-lint` are installed (`go install ...@latest`) before running CI-linked tasks.
+- Coverage reports output to `coverage.out` for artifact uploads or external services.
+
+## Security & Configuration Tips
+- Source `TMDB_API_KEY` through environment variables or `.envrc`; never commit secrets or personal vault data.
+- Scrub TMDB payloads and file paths from diagnostic logs before sharing outside the team.

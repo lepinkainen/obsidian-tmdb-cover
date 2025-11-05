@@ -1,82 +1,159 @@
 # Obsidian TMDB Cover
 
-Add TMDB cover images and metadata to your Obsidian notes automatically.
+Automatically fetch TMDB cover art, metadata, and content sections for your Obsidian movie/TV show notes.
 
 ## Features
 
-- Fetches movie/TV show cover images from TheMovieDB (TMDB)
-- Downloads and resizes images locally to your vault's `attachments/` folder
-- Adds runtime and genre tags to note frontmatter
-- Processes entire directories in batch mode
-- Handles various cover scenarios (missing, color placeholders, external URLs)
+- 🎬 Search TMDB for movies and TV shows
+- 🖼️ Download and resize poster art to `attachments/`
+- 📝 Update frontmatter with runtime, genres, and TMDB IDs
+- 📄 Generate markdown sections (overview, info tables, seasons)
+- 🎨 Interactive TUI selector for multiple matches
+- 🔄 Smart caching with stored TMDB IDs
 
-## Installation
-
-```bash
-pip install obsidian-tmdb-cover
-```
-
-## Run without installation
-
-Use `uvx` to run the tool without permanent installation:
+## Quick Start
 
 ```bash
-# Run directly with uvx (no installation required)
-env TMDB_API_KEY=your_api_key_here uvx obsidian-tmdb-cover /path/to/your/obsidian/vault
+# Install
+go install github.com/lepinkainen/obsidian-tmdb-cover/cmd/obsidian-tmdb-cover@latest
+
+# Set API key (get free key at themoviedb.org)
+export TMDB_API_KEY=your_api_key_here
+
+# Process your vault
+obsidian-tmdb-cover /path/to/obsidian/vault
 ```
 
 ## Usage
 
-**Bring Your Own API Key** - Get a free API key from [TheMovieDB](https://www.themoviedb.org/settings/api).
-
 ```bash
-# Set your TMDB API key
-export TMDB_API_KEY=your_api_key_here
+# Process vault or single file
+obsidian-tmdb-cover /path/to/vault
+obsidian-tmdb-cover /path/to/note.md
 
-# Process an Obsidian vault
-obsidian-tmdb-cover /path/to/your/obsidian/vault
+# Force re-search even with stored TMDB IDs
+obsidian-tmdb-cover --force /path/to/vault
 
-# Or run as a module
-python -m obsidian_tmdb_cover /path/to/your/obsidian/vault
+# Generate content sections
+obsidian-tmdb-cover --generate-content /path/to/vault
+obsidian-tmdb-cover -g --content-sections overview,info,seasons /path/to/vault
 ```
 
-The tool will:
+## How It Works
 
-1. Find all `.md` files in the directory
-2. Extract titles from frontmatter, H1 headers, or filenames
-3. Search TMDB for matching movies/TV shows
-4. Download cover images and add metadata to frontmatter
+```mermaid
+graph TD
+    A[Load Markdown File] --> B[Extract Title]
+    B --> C{Check Needs}
+    C -->|Has TMDB ID & Complete| D[Skip File]
+    C -->|Missing Data| E{Has TMDB ID?}
+
+    E -->|Yes & !--force| F[Direct TMDB Lookup]
+    E -->|No or --force| G[Search TMDB]
+
+    G --> H{Multiple Results?}
+    H -->|Yes| I[Show TUI Selector]
+    H -->|No| J[Use Single Result]
+    I -->|Selected| J
+    I -->|Skipped| D
+    I -->|Stopped| K[Stop Processing]
+
+    J --> L{Needs Cover?}
+    L -->|Yes| M[Download & Resize Image]
+    L -->|No| N{Needs Metadata?}
+
+    M --> O[Update Cover Path in Frontmatter]
+    F --> L
+
+    O --> N
+    N -->|Yes| P[Update Runtime/Genres/Tags]
+    N -->|No| Q{Generate Content?}
+
+    P --> R[Store TMDB ID & Type]
+    R --> Q
+
+    Q -->|Yes| S[Fetch Full Details]
+    Q -->|No| T[Save File]
+
+    S --> U[Inject Markdown Sections]
+    U --> T
+    T --> V[Next File]
+
+    style I fill:#ffd700
+    style K fill:#ff6b6b
+    style T fill:#51cf66
+```
 
 ## Example
 
-Before:
-
+**Before:**
 ```yaml
 ---
 title: The Matrix
 ---
 ```
 
-After:
-
+**After:**
 ```yaml
 ---
 title: The Matrix
 cover: attachments/The Matrix - cover.jpg
 runtime: 136
 tags: [movie/Action, movie/Science-Fiction]
+tmdb_id: 603
+tmdb_type: movie
 ---
+```
+
+**With --generate-content:**
+```markdown
+---
+title: The Matrix
+cover: attachments/The Matrix - cover.jpg
+runtime: 136
+tags: [movie/Action, movie/Science-Fiction]
+tmdb_id: 603
+tmdb_type: movie
+---
+
+<!-- TMDB_DATA_START -->
+## Overview
+
+A computer hacker learns from mysterious rebels about the true nature of his reality...
+
+> _"Welcome to the Real World"_
+
+## Movie Info
+
+| | |
+|---|---|
+| **Status** | Released |
+| **Runtime** | 136 min |
+| **Released** | 1999-03-30 |
+| **Rating** | ⭐ 8.2/10 (25,123 votes) |
+| **Budget** | $63,000,000 |
+| **Revenue** | $463,517,383 |
+| **Origin** | 🇺🇸 US |
+| **IMDB** | [imdb.com/title/tt0133093](https://www.imdb.com/title/tt0133093/) |
+<!-- TMDB_DATA_END -->
+```
+
+## Build from Source
+
+```bash
+git clone https://github.com/lepinkainen/obsidian-tmdb-cover.git
+cd obsidian-tmdb-cover
+go build -o bin/obsidian-tmdb-cover ./cmd/obsidian-tmdb-cover
 ```
 
 ## Requirements
 
-- Python 3.8+
-- TMDB API key (free)
-- Obsidian vault with markdown files
+- Go 1.25+
+- TMDB API key ([free registration](https://www.themoviedb.org/settings/api))
 
 ## Contributing
 
-New to the project? Read the [Repository Guidelines](AGENTS.md) for structure, tooling, and contribution expectations.
+See [CLAUDE.md](CLAUDE.md) for architecture and [AGENTS.md](AGENTS.md) for development guidelines.
 
 ## License
 

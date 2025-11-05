@@ -1,0 +1,50 @@
+version: "2"
+
+run:
+  timeout: 5m
+  issues-exit-code: 1
+  tests: true
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - misspell
+    - staticcheck
+    - unused
+    - gocritic
+    - revive
+
+linters-settings:
+  govet:
+    enable:
+      - shadow
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - experimental
+      - opinionated
+      - performance
+      - style
+    disabled-checks:
+      - exitAfterDefer
+      - rangeValCopy
+      - hugeParam
+      - singleCaseSwitch
+      - ifElseChain
+      - paramTypeCombine
+  revive:
+    severity: warning
+    rules:
+      - name: exported
+        severity: warning
+        arguments:
+          - checkPrivateReceivers
+          - sayRepetitiveInsteadOfStutters
+      - name: var-naming
+        disabled: true
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
